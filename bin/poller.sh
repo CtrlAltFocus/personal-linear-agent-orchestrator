@@ -12,8 +12,8 @@ mkdir -p "$PLAO_DIR"
 touch "$SEEN_FILE"
 
 # Check for API key
-if [ -z "$LINEAR_API_KEY" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: LINEAR_API_KEY environment variable not set"
+if [ -z "$PLAO_LINEAR_API_KEY" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: PLAO_LINEAR_API_KEY environment variable not set"
     exit 1
 fi
 
@@ -46,7 +46,7 @@ QUERY='query {
 # Make the API request
 RESPONSE=$(curl -s -X POST \
     -H "Content-Type: application/json" \
-    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Authorization: $PLAO_LINEAR_API_KEY" \
     -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
     https://api.linear.app/graphql)
 
@@ -79,7 +79,7 @@ if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
 
     RESPONSE=$(curl -s -X POST \
         -H "Content-Type: application/json" \
-        -H "Authorization: $LINEAR_API_KEY" \
+        -H "Authorization: $PLAO_LINEAR_API_KEY" \
         -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
         https://api.linear.app/graphql)
 fi

@@ -91,7 +91,7 @@ Labels act as commands. The system parses them to determine which model to use, 
 
    ```bash
    # Add to ~/.zshrc or ~/.bashrc
-   export LINEAR_API_KEY="lin_api_xxxxx"
+   export PLAO_LINEAR_API_KEY="lin_api_xxxxx"
    ```
 
 2. **Install dependencies:**
@@ -211,7 +211,7 @@ pueue start --group plao
 
 ### Tasks not being picked up
 
-1. Check if `LINEAR_API_KEY` is set: `echo $LINEAR_API_KEY`
+1. Check if `PLAO_LINEAR_API_KEY` is set: `echo $PLAO_LINEAR_API_KEY`
 2. Check if the poller is running: `tail -f ~/.plao/poller.log`
 3. Verify the label matches the pattern `*-todo`
 4. Ensure the ticket is in the Product team
