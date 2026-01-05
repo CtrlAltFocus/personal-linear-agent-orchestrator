@@ -6,11 +6,10 @@ set -e
 
 ID="$1"       # Linear issue UUID
 CODE="$2"     # e.g., "PROJ-123"
-TITLE="$3"    # Issue title
-LABEL="$4"    # e.g., "gemini-research-todo"
+LABEL="$3"    # e.g., "gemini-research-todo"
 
 if [ -z "$ID" ] || [ -z "$CODE" ] || [ -z "$LABEL" ]; then
-    echo "Usage: worker.sh <issue-id> <issue-code> <title> <label>"
+    echo "Usage: worker.sh <issue-id> <issue-code> <label>"
     exit 1
 fi
 
@@ -26,7 +25,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "=== PLAO Worker ==="
 echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "Issue: $CODE - $TITLE"
+echo "Issue: $CODE (ID: $ID)"
 echo "Label: $LABEL"
 echo ""
 
@@ -94,12 +93,12 @@ DONE_LABEL="${MODEL}-${STEPS}-done"
 
 # Build the prompt
 read -r -d '' PROMPT << 'PROMPT_END' || true
-You are an autonomous agent working on Linear ticket ${CODE}: "${TITLE}"
+You are an autonomous agent working on Linear ticket ${CODE}.
 
 ## Your Task
 
 1. First, use the Linear MCP tool to fetch the full details of issue ID: ${ID}
-2. Read the ticket description, comments, and any linked documents
+2. Read the ticket title, description, comments, and any linked documents
 3. Execute the following steps in order: ${STEPS_DISPLAY}
 
 ## Step Definitions
@@ -131,7 +130,7 @@ Use the Linear MCP tool to perform these label updates.
 PROMPT_END
 
 # Substitute variables into the prompt
-PROMPT=$(echo "$PROMPT" | sed "s/\${CODE}/$CODE/g" | sed "s/\${TITLE}/$TITLE/g" | sed "s/\${ID}/$ID/g" | sed "s/\${STEPS_DISPLAY}/$STEPS_DISPLAY/g" | sed "s/\${DONE_LABEL}/$DONE_LABEL/g" | sed "s/\${LABEL}/$LABEL/g")
+PROMPT=$(echo "$PROMPT" | sed "s/\${CODE}/$CODE/g" | sed "s/\${ID}/$ID/g" | sed "s/\${STEPS_DISPLAY}/$STEPS_DISPLAY/g" | sed "s/\${DONE_LABEL}/$DONE_LABEL/g" | sed "s/\${LABEL}/$LABEL/g")
 
 echo "=== Executing Agent ==="
 echo ""

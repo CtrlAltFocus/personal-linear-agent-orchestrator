@@ -104,7 +104,6 @@ fi
 echo "$ISSUES" | while read -r issue; do
     ID=$(echo "$issue" | jq -r '.id')
     CODE=$(echo "$issue" | jq -r '.identifier')
-    TITLE=$(echo "$issue" | jq -r '.title')
 
     # Find the *-todo label
     LABEL=$(echo "$issue" | jq -r '.labels.nodes[].name' 2>/dev/null | grep -E '.*-todo$' | head -1)
@@ -120,9 +119,9 @@ echo "$ISSUES" | while read -r issue; do
         continue
     fi
 
-    # Enqueue the task (escape arguments for shell safety)
-    ESCAPED_TITLE=$(printf '%q' "$TITLE")
-    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$ESCAPED_TITLE" "$LABEL"
+    # Enqueue the task (only pass safe values - ID, CODE, LABEL)
+    # The worker/agent will fetch full details from Linear
+    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$LABEL"
 
     # Mark as seen
     echo "$TASK_KEY" >> "$SEEN_FILE"

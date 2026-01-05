@@ -161,7 +161,7 @@ tail -f ~/.plao/poller.log
 You can manually run the worker for testing:
 
 ```bash
-./bin/worker.sh "<issue-uuid>" "PROJ-123" "Issue title" "gemini-research-todo"
+./bin/worker.sh "<issue-uuid>" "PROJ-123" "gemini-research-todo"
 ```
 
 ## File Structure
