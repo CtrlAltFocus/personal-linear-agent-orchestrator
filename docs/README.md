@@ -57,8 +57,29 @@ plao start
 | `plao stop` | Stop the polling daemon |
 | `plao status` | Show daemon and queue status |
 | `plao logs` | Tail the poller logs |
+| `plao follow <id>` | Follow a task's output (wraps `pueue follow`) |
 
 ## Configuration
+
+### Global Config (`~/.plao/config.json`)
+
+Controls daemon behavior. Created automatically with defaults on first run.
+
+```json
+{
+  "poll_interval_seconds": 60,
+  "log_max_lines": 10000
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `poll_interval_seconds` | 60 | How often to check Linear for new tasks |
+| `log_max_lines` | 10000 | Max lines in poller.log before rotation (truncates to 50%) |
+
+**Note:** Changes require daemon restart: `plao stop && plao start`
+
+### Project Config (`.plao.config.json`)
 
 Each registered project has a `.plao.config.json` file in its root:
 
@@ -121,10 +142,11 @@ Labels act as commands. The system parses them to determine which model to use a
 
 ```
 ~/.plao/
+├── config.json         # Global config (poll interval, log limits)
 ├── projects.txt        # List of registered project paths
 ├── seen_tasks.txt      # Deduplication tracking
 ├── plao.pid            # Daemon PID file
-├── poller.log          # Poller output
+├── poller.log          # Poller output (auto-rotated)
 └── logs/               # Individual task logs
 
 /your/project/
@@ -140,14 +162,14 @@ plao status
 # Watch the poller logs
 plao logs
 
-# Watch pueue queue directly
-watch -n 2 'pueue status --group plao'
+# Follow a specific task's output
+plao follow <task_id>
 
-# Follow a specific task
-pueue follow <task_id>
-
-# View task logs
+# View individual task logs
 tail -f ~/.plao/logs/*.log
+
+# Watch pueue queue directly (alternative)
+watch -n 2 'pueue status --group plao'
 ```
 
 ## Prerequisites
@@ -194,11 +216,13 @@ pueue group add plao
 
 ## Roadmap
 
-### Milestone 1 (Current)
+### Milestone 1 (Complete)
 - [x] CLI with start/stop daemon
 - [x] Per-project configuration
 - [x] Steps: research, plan, review
 - [x] pueue integration
+- [x] Configurable poll interval
+- [x] Log rotation with watermarks
 
 ### Milestone 2 (Future)
 - [ ] `implement` step with git worktrees

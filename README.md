@@ -24,13 +24,15 @@ plao start
 ## Commands
 
 ```bash
-plao help       # Show usage
-plao add        # Register current directory
-plao list       # Show registered projects
-plao start      # Start polling daemon
-plao stop       # Stop polling daemon
-plao status     # Check status
-plao logs       # Watch logs
+plao help         # Show usage
+plao setup        # Initialize pueue
+plao add          # Register current directory
+plao list         # Show registered projects
+plao start        # Start polling daemon
+plao stop         # Stop polling daemon
+plao status       # Check status
+plao logs         # Watch poller logs
+plao follow <id>  # Follow task output
 ```
 
 ## Label Format
