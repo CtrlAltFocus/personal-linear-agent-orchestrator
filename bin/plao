@@ -6,6 +6,7 @@ set -e
 
 PLAO_DIR="$HOME/.plao"
 PROJECTS_FILE="$PLAO_DIR/projects.txt"
+CONFIG_FILE="$PLAO_DIR/config.json"
 PID_FILE="$PLAO_DIR/plao.pid"
 LOG_FILE="$PLAO_DIR/poller.log"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,6 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Ensure base directory exists
 mkdir -p "$PLAO_DIR/logs"
 touch "$PLAO_DIR/seen_tasks.txt"
+
+# Create default config if it doesn't exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo '{"poll_interval_seconds": 60}' > "$CONFIG_FILE"
+fi
 
 # ============================================================================
 # Helper functions
@@ -22,6 +28,15 @@ ensure_projects_file() {
     if [ ! -f "$PROJECTS_FILE" ]; then
         touch "$PROJECTS_FILE"
     fi
+}
+
+get_poll_interval() {
+    local interval=$(jq -r '.poll_interval_seconds // 60' "$CONFIG_FILE" 2>/dev/null)
+    # Ensure it's a valid number, default to 60
+    if ! [[ "$interval" =~ ^[0-9]+$ ]]; then
+        interval=60
+    fi
+    echo "$interval"
 }
 
 is_running() {
@@ -67,9 +82,12 @@ EXAMPLES:
     plao status                 # Check if running
     plao logs                   # Watch the logs
 
-CONFIG:
-    Each registered project needs a .plao.config.json file:
+GLOBAL CONFIG (~/.plao/config.json):
+    {
+      "poll_interval_seconds": 60
+    }
 
+PROJECT CONFIG (.plao.config.json in each project):
     {
       "linear_api_key": "lin_api_xxxxx",
       "teams": ["Product", "Engineering"]
@@ -205,22 +223,27 @@ cmd_start() {
         pueue parallel 2 --group plao
     fi
 
+    # Get poll interval from config
+    local poll_interval=$(get_poll_interval)
+
     echo "Starting PLAO daemon..."
 
     # Start the poller loop in background
     nohup bash -c "
         while true; do
             \"$SCRIPT_DIR/plao-poll\" >> \"$LOG_FILE\" 2>&1
-            sleep 60
+            sleep $poll_interval
         done
     " > /dev/null 2>&1 &
 
     echo $! > "$PID_FILE"
     echo "PLAO daemon started (PID: $!)"
-    echo "Polling every 60 seconds"
+    echo "Polling every ${poll_interval} seconds"
     echo ""
     echo "Use 'plao logs' to watch activity"
     echo "Use 'plao stop' to stop the daemon"
+    echo ""
+    echo "To change interval: edit ~/.plao/config.json, then 'plao stop && plao start'"
 }
 
 cmd_stop() {
