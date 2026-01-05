@@ -17,6 +17,22 @@ touch "$PLAO_DIR/seen_tasks.txt"
 echo "  Created: $PLAO_DIR"
 echo "  Created: $PLAO_DIR/logs"
 echo "  Created: $PLAO_DIR/seen_tasks.txt"
+
+# Create sample config.json if it doesn't exist
+if [ ! -f "$PLAO_DIR/config.json" ]; then
+    cat > "$PLAO_DIR/config.json" << 'EOF'
+{
+  "linear_api_key": "lin_api_xxxxx",
+  "projects": {
+    "PROD": "/Users/andy/Documents/Projects/my-product",
+    "API": "/Users/andy/Documents/Projects/api-server"
+  }
+}
+EOF
+    echo "  Created: $PLAO_DIR/config.json (sample - please edit!)"
+else
+    echo "  Exists: $PLAO_DIR/config.json"
+fi
 echo ""
 
 # Check for dependencies

@@ -4,12 +4,18 @@
 
 set -e
 
-ID="$1"       # Linear issue UUID
-CODE="$2"     # e.g., "PROJ-123"
-LABEL="$3"    # e.g., "gemini-research-todo"
+ID="$1"           # Linear issue UUID
+CODE="$2"         # e.g., "PROJ-123"
+LABEL="$3"        # e.g., "gemini-research-todo"
+PROJECT_PATH="$4" # Path to the project directory
 
-if [ -z "$ID" ] || [ -z "$CODE" ] || [ -z "$LABEL" ]; then
-    echo "Usage: worker.sh <issue-id> <issue-code> <label>"
+if [ -z "$ID" ] || [ -z "$CODE" ] || [ -z "$LABEL" ] || [ -z "$PROJECT_PATH" ]; then
+    echo "Usage: worker.sh <issue-id> <issue-code> <label> <project-path>"
+    exit 1
+fi
+
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "ERROR: Project path does not exist: $PROJECT_PATH"
     exit 1
 fi
 
@@ -27,6 +33,12 @@ echo "=== PLAO Worker ==="
 echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "Issue: $CODE (ID: $ID)"
 echo "Label: $LABEL"
+echo "Project: $PROJECT_PATH"
+echo ""
+
+# Change to project directory
+cd "$PROJECT_PATH"
+echo "Working directory: $(pwd)"
 echo ""
 
 # Parse the label

@@ -11,9 +11,17 @@ SEEN_FILE="$PLAO_DIR/seen_tasks.txt"
 mkdir -p "$PLAO_DIR"
 touch "$SEEN_FILE"
 
-# Check for API key
-if [ -z "$PLAO_LINEAR_API_KEY" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: PLAO_LINEAR_API_KEY environment variable not set"
+# Check for config file
+CONFIG_FILE="$PLAO_DIR/config.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $CONFIG_FILE not found. Run setup.sh first."
+    exit 1
+fi
+
+# Read API key from config
+LINEAR_API_KEY=$(jq -r '.linear_api_key // empty' "$CONFIG_FILE")
+if [ -z "$LINEAR_API_KEY" ] || [ "$LINEAR_API_KEY" = "lin_api_xxxxx" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Please set linear_api_key in $CONFIG_FILE"
     exit 1
 fi
 
@@ -46,7 +54,7 @@ QUERY='query {
 # Make the API request
 RESPONSE=$(curl -s -X POST \
     -H "Content-Type: application/json" \
-    -H "Authorization: $PLAO_LINEAR_API_KEY" \
+    -H "Authorization: $LINEAR_API_KEY" \
     -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
     https://api.linear.app/graphql)
 
@@ -79,7 +87,7 @@ if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
 
     RESPONSE=$(curl -s -X POST \
         -H "Content-Type: application/json" \
-        -H "Authorization: $PLAO_LINEAR_API_KEY" \
+        -H "Authorization: $LINEAR_API_KEY" \
         -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
         https://api.linear.app/graphql)
 fi
@@ -112,6 +120,22 @@ echo "$ISSUES" | while read -r issue; do
         continue
     fi
 
+    # Extract project prefix from CODE (e.g., "PROD" from "PROD-143")
+    PROJECT_PREFIX=$(echo "$CODE" | cut -d'-' -f1)
+
+    # Look up project path from config
+    PROJECT_PATH=$(jq -r --arg prefix "$PROJECT_PREFIX" '.projects[$prefix] // empty' "$CONFIG_FILE")
+
+    if [ -z "$PROJECT_PATH" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: No project path configured for $PROJECT_PREFIX (skipping $CODE)"
+        continue
+    fi
+
+    if [ ! -d "$PROJECT_PATH" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project path does not exist: $PROJECT_PATH (skipping $CODE)"
+        continue
+    fi
+
     # Skip if already seen (dedup by ID + label combination)
     TASK_KEY="${ID}:${LABEL}"
     if grep -qF "$TASK_KEY" "$SEEN_FILE"; then
@@ -119,14 +143,14 @@ echo "$ISSUES" | while read -r issue; do
         continue
     fi
 
-    # Enqueue the task (only pass safe values - ID, CODE, LABEL)
+    # Enqueue the task (only pass safe values - ID, CODE, LABEL, PROJECT_PATH)
     # The worker/agent will fetch full details from Linear
-    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$LABEL"
+    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$LABEL" "$PROJECT_PATH"
 
     # Mark as seen
     echo "$TASK_KEY" >> "$SEEN_FILE"
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Enqueued: $CODE - $LABEL"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Enqueued: $CODE - $LABEL -> $PROJECT_PATH"
 done
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling complete"

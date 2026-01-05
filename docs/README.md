@@ -84,17 +84,7 @@ Labels act as commands. The system parses them to determine which model to use, 
 
 ### Installation
 
-1. **Get a Linear API key:**
-
-   - Go to Linear → Settings → API → Personal API keys
-   - Create a new key and add to your shell profile:
-
-   ```bash
-   # Add to ~/.zshrc or ~/.bashrc
-   export PLAO_LINEAR_API_KEY="lin_api_xxxxx"
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
 
    ```bash
    # pueue
@@ -105,7 +95,7 @@ Labels act as commands. The system parses them to determine which model to use, 
    brew install jq
    ```
 
-3. **Run the setup script:**
+2. **Run the setup script:**
 
    ```bash
    ./bin/setup.sh
@@ -113,9 +103,24 @@ Labels act as commands. The system parses them to determine which model to use, 
 
    This will:
    - Create `~/.plao/` directory for logs and state
+   - Create `~/.plao/config.json` (sample config)
    - Initialize pueue daemon
    - Create the `plao` task group
-   - Display the cron entry to add
+
+3. **Configure `~/.plao/config.json`:**
+
+   ```json
+   {
+     "linear_api_key": "lin_api_xxxxx",
+     "projects": {
+       "PROD": "/Users/you/Projects/my-product",
+       "API": "/Users/you/Projects/api-server"
+     }
+   }
+   ```
+
+   - Get your Linear API key from: Linear → Settings → API → Personal API keys
+   - Map each Linear project prefix (e.g., "PROD" from "PROD-123") to its local directory
 
 4. **Add to cron (or run as loop):**
 
@@ -161,7 +166,7 @@ tail -f ~/.plao/poller.log
 You can manually run the worker for testing:
 
 ```bash
-./bin/worker.sh "<issue-uuid>" "PROJ-123" "gemini-research-todo"
+./bin/worker.sh "<issue-uuid>" "PROJ-123" "gemini-research-todo" "/path/to/project"
 ```
 
 ## File Structure
@@ -186,6 +191,7 @@ All runtime data is stored in `~/.plao/`:
 
 ```
 ~/.plao/
+├── config.json         # API key and project mappings
 ├── seen_tasks.txt      # Deduplication tracking
 ├── poller.log          # Poller output
 └── logs/               # Individual task logs
@@ -211,11 +217,12 @@ pueue start --group plao
 
 ### Tasks not being picked up
 
-1. Check if `PLAO_LINEAR_API_KEY` is set: `echo $PLAO_LINEAR_API_KEY`
-2. Check if the poller is running: `tail -f ~/.plao/poller.log`
-3. Verify the label matches the pattern `*-todo`
-4. Ensure the ticket is in the Product team
-5. Check `~/.plao/seen_tasks.txt` for duplicates
+1. Check if `linear_api_key` is set in `~/.plao/config.json`
+2. Check if the project prefix is mapped in `config.json` (e.g., "PROD" for "PROD-123")
+3. Check if the poller is running: `tail -f ~/.plao/poller.log`
+4. Verify the label matches the pattern `*-todo`
+5. Ensure the ticket is in the Product team
+6. Check `~/.plao/seen_tasks.txt` for duplicates
 
 ### Agent errors
 
