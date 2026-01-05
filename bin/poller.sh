@@ -1,6 +1,7 @@
 #!/bin/bash
 # PLAO Poller Script
 # Runs periodically to find Linear tickets with *-todo labels and enqueue them
+# Uses Linear GraphQL API directly (no AI calls)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLAO_DIR="$HOME/.plao"
@@ -10,35 +11,103 @@ SEEN_FILE="$PLAO_DIR/seen_tasks.txt"
 mkdir -p "$PLAO_DIR"
 touch "$SEEN_FILE"
 
+# Check for API key
+if [ -z "$LINEAR_API_KEY" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: LINEAR_API_KEY environment variable not set"
+    exit 1
+fi
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling for *-todo labels..."
 
-# Query Linear for tickets with *-todo labels in the Product team using Gemini Flash
-PROMPT='Use the Linear MCP tool to search for issues in the "Product" team that have labels ending with "-todo".
+# GraphQL query to find issues with labels ending in "-todo" in the Product team
+# We fetch issues that have any label, then filter client-side for *-todo pattern
+QUERY='query {
+  team(id: "Product") {
+    issues(
+      filter: {
+        labels: { some: { name: { endsWith: "-todo" } } }
+      }
+      first: 50
+    ) {
+      nodes {
+        id
+        identifier
+        title
+        labels {
+          nodes {
+            name
+          }
+        }
+      }
+    }
+  }
+}'
 
-Return ONLY a valid JSON array with this exact format (no markdown, no explanation):
-[{"id": "uuid", "identifier": "PROJ-123", "title": "Issue title", "labels": ["label1", "label2"]}]
+# Make the API request
+RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
+    https://api.linear.app/graphql)
 
-If no issues found, return: []'
+# Check for errors
+if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+    # Try by team name instead of ID
+    QUERY='query {
+      teams(filter: { name: { eq: "Product" } }) {
+        nodes {
+          issues(
+            filter: {
+              labels: { some: { name: { endsWith: "-todo" } } }
+            }
+            first: 50
+          ) {
+            nodes {
+              id
+              identifier
+              title
+              labels {
+                nodes {
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }'
 
-RESPONSE=$(gemini "$PROMPT" -m gemini-3-flash-preview -y -o text 2>/dev/null)
+    RESPONSE=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
+        https://api.linear.app/graphql)
+fi
 
-# Try to extract JSON from the response (handle potential markdown wrapping)
-TICKETS=$(echo "$RESPONSE" | grep -o '\[.*\]' | head -1)
+# Check for errors again
+if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] API Error: $(echo "$RESPONSE" | jq -r '.errors[0].message')"
+    exit 1
+fi
 
-# Validate we got JSON
-if [ -z "$TICKETS" ] || ! echo "$TICKETS" | jq empty 2>/dev/null; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No valid JSON response from Gemini"
+# Extract issues - handle both query formats
+ISSUES=$(echo "$RESPONSE" | jq -c '
+    (.data.team.issues.nodes // .data.teams.nodes[0].issues.nodes // [])[]
+' 2>/dev/null)
+
+if [ -z "$ISSUES" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No issues with *-todo labels found"
     exit 0
 fi
 
-# Process each ticket
-echo "$TICKETS" | jq -c '.[]' 2>/dev/null | while read -r ticket; do
-    ID=$(echo "$ticket" | jq -r '.id')
-    CODE=$(echo "$ticket" | jq -r '.identifier')
-    TITLE=$(echo "$ticket" | jq -r '.title')
+# Process each issue
+echo "$ISSUES" | while read -r issue; do
+    ID=$(echo "$issue" | jq -r '.id')
+    CODE=$(echo "$issue" | jq -r '.identifier')
+    TITLE=$(echo "$issue" | jq -r '.title')
 
     # Find the *-todo label
-    LABEL=$(echo "$ticket" | jq -r '.labels[]' 2>/dev/null | grep -E '.*-todo$' | head -1)
+    LABEL=$(echo "$issue" | jq -r '.labels.nodes[].name' 2>/dev/null | grep -E '.*-todo$' | head -1)
 
     if [ -z "$LABEL" ]; then
         continue

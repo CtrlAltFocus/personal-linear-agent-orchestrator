@@ -13,15 +13,18 @@ A label-driven automation system that watches Linear tickets for special labels,
 │  │  (cron/loop) │    │  (task queue)│    │                  │  │
 │  └──────────────┘    └──────────────┘    │  ┌────────────┐  │  │
 │         │                                │  │ claude -p  │  │  │
-│         │ Linear MCP                     │  │ gemini     │  │  │
-│         ▼                                │  └────────────┘  │  │
-│  ┌──────────────┐                        │        │         │  │
-│  │ Fetch issues │                        │        ▼         │  │
-│  │ with *-todo  │                        │  Linear MCP      │  │
-│  │ labels       │                        │  (update ticket) │  │
-│  └──────────────┘                        └──────────────────┘  │
+│         │ Linear API                     │  │ gemini     │  │  │
+│         │ (GraphQL)                      │  └────────────┘  │  │
+│         ▼                                │        │         │  │
+│  ┌──────────────┐                        │        ▼         │  │
+│  │ Fetch issues │                        │  Linear MCP      │  │
+│  │ with *-todo  │                        │  (update ticket) │  │
+│  │ labels       │                        └──────────────────┘  │
+│  └──────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+The poller uses the Linear GraphQL API directly (no AI calls) to efficiently check for new tasks every minute.
 
 ## Label Grammar
 
@@ -77,10 +80,21 @@ Labels act as commands. The system parses them to determine which model to use, 
 - [jq](https://jqlang.github.io/jq/) - JSON processor
 - `claude` CLI - Authenticated and configured with Linear MCP
 - `gemini` CLI - Authenticated and configured with Linear MCP
+- **Linear API key** - For the poller to query tickets
 
 ### Installation
 
-1. **Install dependencies:**
+1. **Get a Linear API key:**
+
+   - Go to Linear → Settings → API → Personal API keys
+   - Create a new key and add to your shell profile:
+
+   ```bash
+   # Add to ~/.zshrc or ~/.bashrc
+   export LINEAR_API_KEY="lin_api_xxxxx"
+   ```
+
+2. **Install dependencies:**
 
    ```bash
    # pueue
@@ -91,7 +105,7 @@ Labels act as commands. The system parses them to determine which model to use, 
    brew install jq
    ```
 
-2. **Run the setup script:**
+3. **Run the setup script:**
 
    ```bash
    ./bin/setup.sh
@@ -103,7 +117,7 @@ Labels act as commands. The system parses them to determine which model to use, 
    - Create the `plao` task group
    - Display the cron entry to add
 
-3. **Add to cron (or run as loop):**
+4. **Add to cron (or run as loop):**
 
    ```bash
    # Via cron (every minute)
@@ -197,10 +211,11 @@ pueue start --group plao
 
 ### Tasks not being picked up
 
-1. Check if the poller is running: `tail -f ~/.plao/poller.log`
-2. Verify the label matches the pattern `*-todo`
-3. Ensure the ticket is in the Product team
-4. Check `~/.plao/seen_tasks.txt` for duplicates
+1. Check if `LINEAR_API_KEY` is set: `echo $LINEAR_API_KEY`
+2. Check if the poller is running: `tail -f ~/.plao/poller.log`
+3. Verify the label matches the pattern `*-todo`
+4. Ensure the ticket is in the Product team
+5. Check `~/.plao/seen_tasks.txt` for duplicates
 
 ### Agent errors
 
