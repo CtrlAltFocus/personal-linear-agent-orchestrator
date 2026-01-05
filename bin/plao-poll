@@ -5,11 +5,27 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLAO_DIR="$HOME/.plao"
 PROJECTS_FILE="$PLAO_DIR/projects.txt"
+CONFIG_FILE="$PLAO_DIR/config.json"
 SEEN_FILE="$PLAO_DIR/seen_tasks.txt"
+LOG_FILE="$PLAO_DIR/poller.log"
 
 # Ensure files exist
 mkdir -p "$PLAO_DIR/logs"
 touch "$SEEN_FILE"
+
+# Log rotation with watermarks
+# High watermark: trigger truncation, Low watermark: truncate to this
+LOG_HIGH_WATERMARK=$(jq -r '.log_max_lines // 10000' "$CONFIG_FILE" 2>/dev/null)
+LOG_LOW_WATERMARK=$((LOG_HIGH_WATERMARK / 2))
+
+if [ -f "$LOG_FILE" ]; then
+    LINE_COUNT=$(wc -l < "$LOG_FILE" | tr -d ' ')
+    if [ "$LINE_COUNT" -gt "$LOG_HIGH_WATERMARK" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Log rotation: $LINE_COUNT lines > $LOG_HIGH_WATERMARK, truncating to $LOG_LOW_WATERMARK"
+        tail -n "$LOG_LOW_WATERMARK" "$LOG_FILE" > "$LOG_FILE.tmp"
+        mv "$LOG_FILE.tmp" "$LOG_FILE"
+    fi
+fi
 
 # Check for projects file
 if [ ! -f "$PROJECTS_FILE" ] || [ ! -s "$PROJECTS_FILE" ]; then

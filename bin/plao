@@ -84,7 +84,8 @@ EXAMPLES:
 
 GLOBAL CONFIG (~/.plao/config.json):
     {
-      "poll_interval_seconds": 60
+      "poll_interval_seconds": 60,
+      "log_max_lines": 10000
     }
 
 PROJECT CONFIG (.plao.config.json in each project):
