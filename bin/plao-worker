@@ -2,6 +2,10 @@
 # PLAO Worker Script
 # Parses labels, invokes the correct AI CLI, manages status updates
 
+# Initialize PATH for non-interactive shells (Automator, launchd, etc.)
+# Source shell config to get nvm, homebrew, and other PATH additions
+[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null || true
+
 set -e
 
 ID="$1"           # Linear issue UUID

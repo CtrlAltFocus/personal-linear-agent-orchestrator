@@ -112,16 +112,37 @@ plao stop    # Stop the daemon
 
 The daemon runs as a background process. Stops when you log out or reboot.
 
-### Auto-start (install/uninstall)
+### Auto-start on Login
+
+Two simple options to start PLAO automatically when you log in:
+
+#### Option A: Shell Profile (simplest)
+
+Add to `~/.zprofile`:
 
 ```bash
-plao install     # Register as macOS launchd service
-plao uninstall   # Remove launchd service
+# Start PLAO if not already running
+pgrep -qf "plao-poll" || /path/to/plao start
 ```
 
-The daemon starts automatically on login and survives reboots. Uses `launchd` (macOS only).
+**Pros:** One line, no setup.
+**Cons:** Only starts when you open Terminal (which most developers do anyway).
 
-**Note:** Don't use both. If you `plao install`, don't also `plao start`.
+#### Option B: Automator App (true login start)
+
+1. Open **Automator** → New → **Application**
+2. Add action: **Run Shell Script**
+3. Paste the **full path** (required!):
+   ```bash
+   /full/path/to/personal-linear-agent-orchestrator/bin/plao start
+   ```
+4. Save as `PLAO.app` (e.g., to `~/Applications/`)
+5. Go to **System Settings → General → Login Items** → add `PLAO.app`
+
+**Pros:** Starts immediately on login, no Terminal needed.
+**Cons:** Requires one-time Automator setup.
+
+**Important:** You must use the full absolute path to `plao` (e.g., `/Users/you/Projects/.../bin/plao`). Automator runs without your shell's PATH, so `plao` alone won't work.
 
 ## Configuration
 

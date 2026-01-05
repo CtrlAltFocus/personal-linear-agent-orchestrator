@@ -74,8 +74,6 @@ COMMANDS:
     status              Show daemon and queue status
     logs                Tail the poller logs
     follow <id>         Follow a task's output (shortcut for: pueue follow <id>)
-    install             Install as launchd service (auto-start on login)
-    uninstall           Remove launchd service
 
 EXAMPLES:
     plao add                    # Register current directory
@@ -262,6 +260,14 @@ cmd_stop() {
     kill "$PID" 2>/dev/null || true
     rm -f "$PID_FILE"
     echo "PLAO daemon stopped"
+
+    # Stop pueue if no tasks are running
+    if pueue status --group plao --json 2>/dev/null | jq -e '.tasks | to_entries | map(select(.value.status == "Running")) | length == 0' >/dev/null 2>&1; then
+        echo "No running tasks, shutting down pueue..."
+        pueue shutdown 2>/dev/null || true
+    else
+        echo "Tasks still running in pueue, leaving it active"
+    fi
 }
 
 cmd_status() {
@@ -383,80 +389,6 @@ cmd_setup() {
     echo "  3. plao start"
 }
 
-LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.plao.daemon.plist"
-
-cmd_install() {
-    # Check if already installed
-    if [ -f "$LAUNCHD_PLIST" ]; then
-        echo "PLAO is already installed as a launchd service."
-        echo "Run 'plao uninstall' first to reinstall."
-        exit 1
-    fi
-
-    # Ensure LaunchAgents directory exists
-    mkdir -p "$HOME/Library/LaunchAgents"
-
-    # Get poll interval from config
-    local poll_interval=$(get_poll_interval)
-
-    # Create the plist file
-    cat > "$LAUNCHD_PLIST" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.plao.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$SCRIPT_DIR/plao-poll</string>
-    </array>
-    <key>StartInterval</key>
-    <integer>$poll_interval</integer>
-    <key>StandardOutPath</key>
-    <string>$LOG_FILE</string>
-    <key>StandardErrorPath</key>
-    <string>$LOG_FILE</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
-</dict>
-</plist>
-EOF
-
-    # Load the service
-    launchctl load "$LAUNCHD_PLIST"
-
-    echo "PLAO installed as launchd service"
-    echo "  Plist: $LAUNCHD_PLIST"
-    echo "  Interval: ${poll_interval}s"
-    echo ""
-    echo "The daemon will now start automatically on login."
-    echo "Use 'plao uninstall' to remove."
-    echo ""
-    echo "Note: If you also have 'plao start' running, stop it with 'plao stop'"
-}
-
-cmd_uninstall() {
-    if [ ! -f "$LAUNCHD_PLIST" ]; then
-        echo "PLAO is not installed as a launchd service."
-        exit 1
-    fi
-
-    # Unload the service
-    launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
-
-    # Remove the plist
-    rm -f "$LAUNCHD_PLIST"
-
-    echo "PLAO launchd service removed"
-    echo "The daemon will no longer start automatically on login."
-}
-
 # ============================================================================
 # Main dispatch
 # ============================================================================
@@ -491,12 +423,6 @@ case "${1:-help}" in
         ;;
     setup)
         cmd_setup
-        ;;
-    install)
-        cmd_install
-        ;;
-    uninstall)
-        cmd_uninstall
         ;;
     *)
         echo "Unknown command: $1"

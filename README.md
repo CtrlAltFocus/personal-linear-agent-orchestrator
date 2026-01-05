@@ -41,6 +41,8 @@ plao add
 plao start
 ```
 
+**Auto-start on login:** See [docs/README.md](docs/README.md#auto-start-on-login) for setup instructions.
+
 ## Daily Usage
 
 Once installed, just add labels to your Linear tickets:
