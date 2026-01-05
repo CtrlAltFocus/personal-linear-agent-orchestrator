@@ -2,50 +2,59 @@
 
 A label-driven automation system for Linear. Add a label like `gemini-research-todo` to a ticket, and an AI agent will execute the work and post results back.
 
-## Quick Start
+## What It Does
+
+- Watches your Linear tickets for labels ending in `-todo`
+- Dispatches work to AI agents (Gemini or Claude CLI)
+- Posts results back as comments on the ticket
+- Updates labels automatically (`-todo` → `-done`)
+
+## Who It's For
+
+Developers who want to automate repetitive ticket work like:
+- **Research** - investigating codebases, gathering context
+- **Planning** - creating implementation plans
+- **Review** - reviewing code, PRs, or documentation
+
+## Installation
 
 ```bash
-# 1. Add bin/ to your PATH (or create alias)
-export PATH="$PATH:/path/to/personal-linear-agent-orchestrator/bin"
+# 1. Clone or download
+git clone https://github.com/yourusername/personal-linear-agent-orchestrator.git
 
-# 2. Run setup
+# 2. Add to PATH
+echo 'export PATH="$PATH:/path/to/personal-linear-agent-orchestrator/bin"' >> ~/.zshrc
+source ~/.zshrc
+
+# 3. Install dependencies
+brew install pueue jq
+
+# 4. Run setup
 plao setup
 
-# 3. Register your project
+# 5. Register a project and configure
 cd /path/to/your/project
 plao add
+# Edit .plao.config.json with your Linear API key
 
-# 4. Edit .plao.config.json with your Linear API key
-
-# 5. Start the daemon
+# 6. Start
 plao start
 ```
 
-## Commands
+## Usage
 
 ```bash
-plao help         # Show usage
-plao setup        # Initialize pueue
-plao add          # Register current directory
-plao list         # Show registered projects
-plao start        # Start polling daemon
-plao stop         # Stop polling daemon
-plao status       # Check status
-plao logs         # Watch poller logs
-plao follow <id>  # Follow task output
+plao help      # Show all commands
+plao status    # Check daemon and queue
+plao logs      # Watch activity
 ```
 
-## Label Format
-
-```
-<model>-<steps>-<status>
-```
-
-Examples:
-- `gemini-research-todo` - Gemini Flash does research
-- `opus-plan-todo` - Claude Opus creates a plan
-- `sonnet-review-todo` - Claude Sonnet reviews work
+Add labels to Linear tickets: `gemini-research-todo`, `opus-plan-todo`, `sonnet-review-todo`
 
 ## Documentation
 
-See [docs/README.md](docs/README.md) for full documentation.
+See [docs/README.md](docs/README.md) for how it works, configuration options, and troubleshooting.
+
+## Contributing
+
+This is a personal project, but forks and contributions are welcome. Feel free to open issues or PRs.

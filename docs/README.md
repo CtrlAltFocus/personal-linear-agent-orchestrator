@@ -1,6 +1,6 @@
-# Personal Linear Agent Orchestrator (PLAO)
+# PLAO Documentation
 
-A label-driven automation system that watches Linear tickets for special labels, dispatches work to AI agents (Gemini or Claude), and posts results back to Linear.
+> **Note:** Tested on macOS only. Linux should work but is untested.
 
 ## Architecture
 
@@ -24,40 +24,37 @@ A label-driven automation system that watches Linear tickets for special labels,
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+## How It Works
+
+1. **Polling**: The daemon polls Linear every N seconds (default: 60) for tickets with `*-todo` labels
+2. **Filtering**: Only tickets from teams listed in your project's config are processed
+3. **Queuing**: Matching tickets are added to a pueue task queue (group: `plao`)
+4. **Execution**: The worker parses the label, invokes the appropriate CLI (gemini/claude), and runs in your project directory
+5. **Completion**: Results are posted as comments, labels updated (`-todo` → `-done`)
+
+## Running the Daemon
+
+There are two ways to run PLAO:
+
+### Manual (start/stop)
 
 ```bash
-# 1. Run setup
-plao setup
-
-# 2. Register your project
-cd /path/to/your/project
-plao add
-
-# 3. Configure .plao.config.json (created automatically)
-# Add your Linear API key and teams to watch
-
-# 4. Start the daemon
-plao start
-
-# 5. Add a label to a Linear ticket
-# e.g., "gemini-research-todo" on any ticket
+plao start   # Start daemon in background
+plao stop    # Stop the daemon
 ```
 
-## CLI Commands
+The daemon runs as a background process. Stops when you log out or reboot.
 
-| Command | Description |
-|---------|-------------|
-| `plao help` | Show help and usage |
-| `plao setup` | Install dependencies, initialize pueue |
-| `plao add [path]` | Register a project (default: current directory) |
-| `plao list` | List all registered projects |
-| `plao remove [path]` | Unregister a project |
-| `plao start` | Start the polling daemon |
-| `plao stop` | Stop the polling daemon |
-| `plao status` | Show daemon and queue status |
-| `plao logs` | Tail the poller logs |
-| `plao follow <id>` | Follow a task's output (wraps `pueue follow`) |
+### Auto-start (install/uninstall)
+
+```bash
+plao install     # Register as macOS launchd service
+plao uninstall   # Remove launchd service
+```
+
+The daemon starts automatically on login and survives reboots. Uses `launchd` (macOS only).
+
+**Note:** Don't use both. If you `plao install`, don't also `plao start`.
 
 ## Configuration
 
@@ -172,18 +169,6 @@ tail -f ~/.plao/logs/*.log
 watch -n 2 'pueue status --group plao'
 ```
 
-## Prerequisites
-
-- [pueue](https://github.com/Nukesor/pueue) - Task queue manager
-- [jq](https://jqlang.github.io/jq/) - JSON processor
-- `claude` CLI - Authenticated and configured with Linear MCP
-- `gemini` CLI - Authenticated and configured with Linear MCP
-
-Install with:
-```bash
-brew install pueue jq
-```
-
 ## Troubleshooting
 
 ### Tasks not being picked up
@@ -223,6 +208,7 @@ pueue group add plao
 - [x] pueue integration
 - [x] Configurable poll interval
 - [x] Log rotation with watermarks
+- [x] launchd install/uninstall for auto-start
 
 ### Milestone 2 (Future)
 - [ ] `implement` step with git worktrees
