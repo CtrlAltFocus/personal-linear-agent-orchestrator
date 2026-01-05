@@ -57,6 +57,7 @@ COMMANDS:
     stop                Stop the polling daemon
     status              Show daemon and queue status
     logs                Tail the poller logs
+    follow <id>         Follow a task's output (shortcut for: pueue follow <id>)
     setup               Run initial setup (pueue, etc.)
 
 EXAMPLES:
@@ -255,10 +256,12 @@ cmd_status() {
     echo "Projects: $count registered"
     echo ""
 
-    # Queue status
-    echo "=== Queue Status ==="
+    # Queue status (pueue)
+    echo "=== Task Queue (pueue) ==="
     if pueue status > /dev/null 2>&1; then
         pueue status --group plao 2>/dev/null || echo "No 'plao' group yet. Run 'plao start' first."
+        echo ""
+        echo "Tip: Use 'plao follow <id>' to watch a task's output"
     else
         echo "pueue daemon not running"
     fi
@@ -271,6 +274,25 @@ cmd_logs() {
     fi
     echo "=== PLAO Logs (Ctrl+C to exit) ==="
     tail -f "$LOG_FILE"
+}
+
+cmd_follow() {
+    local task_id="$1"
+    if [ -z "$task_id" ]; then
+        echo "Usage: plao follow <task_id>"
+        echo ""
+        echo "Get task IDs from 'plao status'"
+        exit 1
+    fi
+
+    if ! pueue status > /dev/null 2>&1; then
+        echo "pueue daemon not running. Run 'plao start' first."
+        exit 1
+    fi
+
+    echo "Following task $task_id (Ctrl+C to stop)..."
+    echo ""
+    pueue follow "$task_id"
 }
 
 cmd_setup() {
@@ -363,6 +385,9 @@ case "${1:-help}" in
         ;;
     logs|log)
         cmd_logs
+        ;;
+    follow)
+        cmd_follow "$2"
         ;;
     setup)
         cmd_setup
