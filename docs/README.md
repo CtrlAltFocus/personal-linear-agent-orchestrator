@@ -26,6 +26,73 @@
 
 ## How It Works
 
+```
+┌─────────┐          ┌─────────┐          ┌─────────┐          ┌─────────┐
+│   You   │          │ Linear  │          │  PLAO   │          │ AI CLI  │
+└────┬────┘          └────┬────┘          └────┬────┘          └────┬────┘
+     │                    │                    │                    │
+     │ Create ticket      │                    │                    │
+     │ "Investigate auth" │                    │                    │
+     ├───────────────────>│                    │                    │
+     │                    │                    │                    │
+     │ Add label          │                    │                    │
+     │ gemini-research-todo                    │                    │
+     ├───────────────────>│                    │                    │
+     │                    │                    │                    │
+     │                    │  Poll (every 60s)  │                    │
+     │                    │<───────────────────┤                    │
+     │                    │                    │                    │
+     │                    │  Found ticket!     │                    │
+     │                    ├───────────────────>│                    │
+     │                    │                    │                    │
+     │                    │                    │ Run gemini         │
+     │                    │                    │ with prompt        │
+     │                    │                    ├───────────────────>│
+     │                    │                    │                    │
+     │                    │                    │    Research done   │
+     │                    │                    │<───────────────────┤
+     │                    │                    │                    │
+     │                    │  Add comment       │                    │
+     │                    │<───────────────────┤                    │
+     │                    │                    │                    │
+     │                    │  Update labels:    │                    │
+     │                    │  +gemini-research-done                  │
+     │                    │  -gemini-research-todo                  │
+     │                    │<───────────────────┤                    │
+     │                    │                    │                    │
+     │ Notification:      │                    │                    │
+     │ "Comment added"    │                    │                    │
+     │<───────────────────┤                    │                    │
+     │                    │                    │                    │
+     │ Read research,     │                    │                    │
+     │ add label          │                    │                    │
+     │ opus-plan-todo     │                    │                    │
+     ├───────────────────>│                    │                    │
+     │                    │                    │                    │
+     │                    │  Poll              │                    │
+     │                    │<───────────────────┤                    │
+     │                    │                    │                    │
+     │                    │                    │ Run claude         │
+     │                    │                    │ with prompt        │
+     │                    │                    ├───────────────────>│
+     │                    │                    │                    │
+     │                    │                    │    Plan done       │
+     │                    │                    │<───────────────────┤
+     │                    │                    │                    │
+     │                    │  Add comment       │                    │
+     │                    │  +opus-plan-done   │                    │
+     │                    │  -opus-plan-todo   │                    │
+     │                    │<───────────────────┤                    │
+     │                    │                    │                    │
+     │ Notification:      │                    │                    │
+     │ "Comment added"    │                    │                    │
+     │<───────────────────┤                    │                    │
+     │                    │                    │                    │
+     ▼                    ▼                    ▼                    ▼
+```
+
+### Summary
+
 1. **Polling**: The daemon polls Linear every N seconds (default: 60) for tickets with `*-todo` labels
 2. **Filtering**: Only tickets from teams listed in your project's config are processed
 3. **Queuing**: Matching tickets are added to a pueue task queue (group: `plao`)

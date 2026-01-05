@@ -41,15 +41,48 @@ plao add
 plao start
 ```
 
-## Usage
+## Daily Usage
+
+Once installed, just add labels to your Linear tickets:
+
+1. **Create a ticket** in Linear (or use an existing one)
+2. **Add a label** like `gemini-research-todo`
+3. **Wait a few minutes** - PLAO polls every 60 seconds by default
+4. **Get notified** - Linear notifies you when a comment is added
+5. **Review the results** - the AI's work appears as a comment, label changes to `-done`
+
+### Example Workflow
+
+```
+Ticket: "Investigate why auth tokens expire early"
+
+You add label:        gemini-research-todo
+  ↓ (1-2 min)
+PLAO posts comment:   [Research findings about token expiration...]
+Label changes to:     gemini-research-done
+
+You read research, then add:  opus-plan-todo
+  ↓ (2-5 min)
+PLAO posts comment:   [Implementation plan with steps...]
+Label changes to:     opus-plan-done
+```
+
+### Available Labels
+
+| Label | What it does |
+|-------|--------------|
+| `gemini-research-todo` | Fast research with Gemini Flash |
+| `opus-research-todo` | Deep research with Claude Opus |
+| `opus-plan-todo` | Create implementation plan |
+| `sonnet-review-todo` | Review code or documentation |
+
+## CLI Commands
 
 ```bash
 plao help      # Show all commands
 plao status    # Check daemon and queue
 plao logs      # Watch activity
 ```
-
-Add labels to Linear tickets: `gemini-research-todo`, `opus-plan-todo`, `sonnet-review-todo`
 
 ## Documentation
 
