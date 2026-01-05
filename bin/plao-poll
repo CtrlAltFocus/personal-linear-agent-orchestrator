@@ -1,0 +1,138 @@
+#!/bin/bash
+# PLAO Poller - Runs once to check all projects for *-todo labels
+# Called by the plao daemon every 60 seconds
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLAO_DIR="$HOME/.plao"
+PROJECTS_FILE="$PLAO_DIR/projects.txt"
+SEEN_FILE="$PLAO_DIR/seen_tasks.txt"
+
+# Ensure files exist
+mkdir -p "$PLAO_DIR/logs"
+touch "$SEEN_FILE"
+
+# Check for projects file
+if [ ! -f "$PROJECTS_FILE" ] || [ ! -s "$PROJECTS_FILE" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No projects registered. Use 'plao add' to register a project."
+    exit 0
+fi
+
+# Count projects
+PROJECT_COUNT=$(grep -c . "$PROJECTS_FILE" 2>/dev/null || echo 0)
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling $PROJECT_COUNT project(s)..."
+
+# GraphQL query for fetching issues with *-todo labels
+QUERY='query {
+  issues(
+    filter: {
+      labels: { some: { name: { endsWith: "-todo" } } }
+    }
+    first: 50
+  ) {
+    nodes {
+      id
+      identifier
+      title
+      team {
+        name
+      }
+      labels {
+        nodes {
+          name
+        }
+      }
+    }
+  }
+}'
+
+# Process each registered project
+while IFS= read -r project_path; do
+    [ -z "$project_path" ] && continue
+
+    # Check project exists
+    if [ ! -d "$project_path" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project directory not found: $project_path"
+        continue
+    fi
+
+    # Check config exists
+    CONFIG_FILE="$project_path/.plao.config.json"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: No .plao.config.json in $project_path"
+        continue
+    fi
+
+    # Read config
+    LINEAR_API_KEY=$(jq -r '.linear_api_key // empty' "$CONFIG_FILE")
+    if [ -z "$LINEAR_API_KEY" ] || [ "$LINEAR_API_KEY" = "lin_api_xxxxx" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Invalid API key in $project_path"
+        continue
+    fi
+
+    # Get teams to watch (array)
+    TEAMS=$(jq -r '.teams // []' "$CONFIG_FILE")
+    if [ "$TEAMS" = "[]" ] || [ -z "$TEAMS" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: No teams configured in $project_path"
+        continue
+    fi
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking: $project_path"
+
+    # Make the API request
+    RESPONSE=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: $LINEAR_API_KEY" \
+        -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
+        https://api.linear.app/graphql)
+
+    # Check for errors
+    if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] API Error: $(echo "$RESPONSE" | jq -r '.errors[0].message')"
+        continue
+    fi
+
+    # Extract issues
+    ISSUES=$(echo "$RESPONSE" | jq -c '.data.issues.nodes[]' 2>/dev/null)
+
+    if [ -z "$ISSUES" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] No issues with *-todo labels found"
+        continue
+    fi
+
+    # Process each issue
+    echo "$ISSUES" | while read -r issue; do
+        ID=$(echo "$issue" | jq -r '.id')
+        CODE=$(echo "$issue" | jq -r '.identifier')
+        TEAM=$(echo "$issue" | jq -r '.team.name')
+
+        # Check if this issue's team is in our watch list
+        if ! echo "$TEAMS" | jq -e --arg team "$TEAM" 'index($team) != null' > /dev/null 2>&1; then
+            continue
+        fi
+
+        # Find the *-todo label
+        LABEL=$(echo "$issue" | jq -r '.labels.nodes[].name' 2>/dev/null | grep -E '.*-todo$' | head -1)
+
+        if [ -z "$LABEL" ]; then
+            continue
+        fi
+
+        # Skip if already seen (dedup by ID + label combination)
+        TASK_KEY="${ID}:${LABEL}"
+        if grep -qF "$TASK_KEY" "$SEEN_FILE"; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipping (already seen): $CODE - $LABEL"
+            continue
+        fi
+
+        # Enqueue the task
+        pueue add --group plao -- "$SCRIPT_DIR/plao-worker" "$ID" "$CODE" "$LABEL" "$project_path"
+
+        # Mark as seen
+        echo "$TASK_KEY" >> "$SEEN_FILE"
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Enqueued: $CODE ($TEAM) - $LABEL -> $project_path"
+    done
+
+done < "$PROJECTS_FILE"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling complete"

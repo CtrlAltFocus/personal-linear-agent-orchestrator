@@ -5,14 +5,32 @@ A label-driven automation system for Linear. Add a label like `gemini-research-t
 ## Quick Start
 
 ```bash
-# 1. Run setup
-./bin/setup.sh
+# 1. Add bin/ to your PATH (or create alias)
+export PATH="$PATH:/path/to/personal-linear-agent-orchestrator/bin"
 
-# 2. Add to cron (or run as loop)
-* * * * * /path/to/bin/poller.sh >> ~/.plao/poller.log 2>&1
+# 2. Run setup
+plao setup
 
-# 3. Add a label to a Linear ticket
-# e.g., "opus-plan-todo" on ticket PROJ-123
+# 3. Register your project
+cd /path/to/your/project
+plao add
+
+# 4. Edit .plao.config.json with your Linear API key
+
+# 5. Start the daemon
+plao start
+```
+
+## Commands
+
+```bash
+plao help       # Show usage
+plao add        # Register current directory
+plao list       # Show registered projects
+plao start      # Start polling daemon
+plao stop       # Stop polling daemon
+plao status     # Check status
+plao logs       # Watch logs
 ```
 
 ## Label Format
@@ -23,8 +41,8 @@ A label-driven automation system for Linear. Add a label like `gemini-research-t
 
 Examples:
 - `gemini-research-todo` - Gemini Flash does research
-- `opus-plan-implement-todo` - Claude Opus plans then implements
-- `sonnet-review-todo` - Claude Sonnet reviews existing work
+- `opus-plan-todo` - Claude Opus creates a plan
+- `sonnet-review-todo` - Claude Sonnet reviews work
 
 ## Documentation
 

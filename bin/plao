@@ -1,0 +1,375 @@
+#!/bin/bash
+# PLAO - Personal Linear Agent Orchestrator
+# Main CLI entrypoint
+
+set -e
+
+PLAO_DIR="$HOME/.plao"
+PROJECTS_FILE="$PLAO_DIR/projects.txt"
+PID_FILE="$PLAO_DIR/plao.pid"
+LOG_FILE="$PLAO_DIR/poller.log"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Ensure base directory exists
+mkdir -p "$PLAO_DIR/logs"
+touch "$PLAO_DIR/seen_tasks.txt"
+
+# ============================================================================
+# Helper functions
+# ============================================================================
+
+ensure_projects_file() {
+    if [ ! -f "$PROJECTS_FILE" ]; then
+        touch "$PROJECTS_FILE"
+    fi
+}
+
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if ps -p "$PID" > /dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# ============================================================================
+# Commands
+# ============================================================================
+
+cmd_help() {
+    cat << 'EOF'
+PLAO - Personal Linear Agent Orchestrator
+
+A label-driven automation system for Linear. Add labels like "gemini-research-todo"
+to tickets, and AI agents will execute the work and post results back.
+
+USAGE:
+    plao <command> [arguments]
+
+COMMANDS:
+    help                Show this help message
+    add [path]          Register a project (default: current directory)
+    list                List all registered projects
+    remove [path]       Unregister a project (default: current directory)
+    start               Start the polling daemon
+    stop                Stop the polling daemon
+    status              Show daemon and queue status
+    logs                Tail the poller logs
+    setup               Run initial setup (pueue, etc.)
+
+EXAMPLES:
+    plao add                    # Register current directory
+    plao add ~/Projects/myapp   # Register specific path
+    plao start                  # Start watching for tickets
+    plao status                 # Check if running
+    plao logs                   # Watch the logs
+
+CONFIG:
+    Each registered project needs a .plao.config.json file:
+
+    {
+      "linear_api_key": "lin_api_xxxxx",
+      "teams": ["Product", "Engineering"]
+    }
+
+LABEL FORMAT:
+    <model>-<steps>-<status>
+
+    Models: gemini, geminipro, opus, sonnet, claude
+    Steps: research, plan, review (comma-separated in label with hyphens)
+    Status: todo, wip, done
+
+    Examples:
+      gemini-research-todo
+      opus-research-plan-todo
+      sonnet-review-todo
+
+EOF
+}
+
+cmd_add() {
+    local project_path="${1:-$(pwd)}"
+    project_path="$(cd "$project_path" 2>/dev/null && pwd)" || {
+        echo "Error: Directory does not exist: $1"
+        exit 1
+    }
+
+    ensure_projects_file
+
+    # Check if already registered
+    if grep -qxF "$project_path" "$PROJECTS_FILE" 2>/dev/null; then
+        echo "Project already registered: $project_path"
+    else
+        echo "$project_path" >> "$PROJECTS_FILE"
+        echo "Registered project: $project_path"
+    fi
+
+    # Create or check config file
+    local config_file="$project_path/.plao.config.json"
+    if [ -f "$config_file" ]; then
+        echo "Config file exists: $config_file"
+    else
+        cat > "$config_file" << 'EOF'
+{
+  "linear_api_key": "lin_api_xxxxx",
+  "teams": ["Product"]
+}
+EOF
+        echo "Created config file: $config_file"
+        echo "  → Please edit this file and add your Linear API key"
+    fi
+
+    # Add to .gitignore if it exists and entry not present
+    local gitignore="$project_path/.gitignore"
+    if [ -f "$gitignore" ]; then
+        if ! grep -qxF ".plao.config.json" "$gitignore" 2>/dev/null; then
+            echo "" >> "$gitignore"
+            echo "# PLAO config (contains API key)" >> "$gitignore"
+            echo ".plao.config.json" >> "$gitignore"
+            echo "Added .plao.config.json to .gitignore"
+        fi
+    elif [ -d "$project_path/.git" ]; then
+        # Git repo exists but no .gitignore
+        echo "# PLAO config (contains API key)" > "$gitignore"
+        echo ".plao.config.json" >> "$gitignore"
+        echo "Created .gitignore with .plao.config.json entry"
+    fi
+}
+
+cmd_list() {
+    ensure_projects_file
+
+    if [ ! -s "$PROJECTS_FILE" ]; then
+        echo "No projects registered."
+        echo "Use 'plao add' to register a project."
+        return
+    fi
+
+    echo "Registered projects:"
+    echo ""
+    while IFS= read -r project_path; do
+        [ -z "$project_path" ] && continue
+        local config_file="$project_path/.plao.config.json"
+        local status="✗ no config"
+        if [ -f "$config_file" ]; then
+            local api_key=$(jq -r '.linear_api_key // empty' "$config_file" 2>/dev/null)
+            if [ -n "$api_key" ] && [ "$api_key" != "lin_api_xxxxx" ]; then
+                local teams=$(jq -r '.teams | join(", ")' "$config_file" 2>/dev/null)
+                status="✓ teams: $teams"
+            else
+                status="✗ API key not configured"
+            fi
+        fi
+        echo "  $project_path"
+        echo "    $status"
+        echo ""
+    done < "$PROJECTS_FILE"
+}
+
+cmd_remove() {
+    local project_path="${1:-$(pwd)}"
+    project_path="$(cd "$project_path" 2>/dev/null && pwd)" || project_path="$1"
+
+    ensure_projects_file
+
+    if grep -qxF "$project_path" "$PROJECTS_FILE" 2>/dev/null; then
+        grep -vxF "$project_path" "$PROJECTS_FILE" > "$PROJECTS_FILE.tmp" || true
+        mv "$PROJECTS_FILE.tmp" "$PROJECTS_FILE"
+        echo "Removed project: $project_path"
+        echo "Note: .plao.config.json was not deleted"
+    else
+        echo "Project not registered: $project_path"
+        exit 1
+    fi
+}
+
+cmd_start() {
+    if is_running; then
+        echo "PLAO daemon is already running (PID: $(cat "$PID_FILE"))"
+        exit 1
+    fi
+
+    # Check pueue is running
+    if ! pueue status > /dev/null 2>&1; then
+        echo "Starting pueue daemon..."
+        pueued -d
+        sleep 1
+    fi
+
+    # Ensure plao group exists
+    if ! pueue group 2>/dev/null | grep -q "plao"; then
+        pueue group add plao
+        pueue parallel 2 --group plao
+    fi
+
+    echo "Starting PLAO daemon..."
+
+    # Start the poller loop in background
+    nohup bash -c "
+        while true; do
+            \"$SCRIPT_DIR/plao-poll\" >> \"$LOG_FILE\" 2>&1
+            sleep 60
+        done
+    " > /dev/null 2>&1 &
+
+    echo $! > "$PID_FILE"
+    echo "PLAO daemon started (PID: $!)"
+    echo "Polling every 60 seconds"
+    echo ""
+    echo "Use 'plao logs' to watch activity"
+    echo "Use 'plao stop' to stop the daemon"
+}
+
+cmd_stop() {
+    if ! is_running; then
+        echo "PLAO daemon is not running"
+        # Clean up stale PID file
+        rm -f "$PID_FILE"
+        exit 0
+    fi
+
+    PID=$(cat "$PID_FILE")
+    echo "Stopping PLAO daemon (PID: $PID)..."
+    kill "$PID" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    echo "PLAO daemon stopped"
+}
+
+cmd_status() {
+    echo "=== PLAO Status ==="
+    echo ""
+
+    # Daemon status
+    if is_running; then
+        echo "Daemon: Running (PID: $(cat "$PID_FILE"))"
+    else
+        echo "Daemon: Stopped"
+    fi
+    echo ""
+
+    # Projects
+    ensure_projects_file
+    local count=$(grep -c . "$PROJECTS_FILE" 2>/dev/null || echo 0)
+    echo "Projects: $count registered"
+    echo ""
+
+    # Queue status
+    echo "=== Queue Status ==="
+    if pueue status > /dev/null 2>&1; then
+        pueue status --group plao 2>/dev/null || echo "No 'plao' group yet. Run 'plao start' first."
+    else
+        echo "pueue daemon not running"
+    fi
+}
+
+cmd_logs() {
+    if [ ! -f "$LOG_FILE" ]; then
+        echo "No log file yet. Start the daemon with 'plao start'"
+        exit 1
+    fi
+    echo "=== PLAO Logs (Ctrl+C to exit) ==="
+    tail -f "$LOG_FILE"
+}
+
+cmd_setup() {
+    echo "=== PLAO Setup ==="
+    echo ""
+
+    # Check dependencies
+    echo "Checking dependencies..."
+
+    if ! command -v pueue &> /dev/null; then
+        echo "  ✗ pueue not found. Install with: brew install pueue"
+        exit 1
+    fi
+    echo "  ✓ pueue"
+
+    if ! command -v jq &> /dev/null; then
+        echo "  ✗ jq not found. Install with: brew install jq"
+        exit 1
+    fi
+    echo "  ✓ jq"
+
+    if command -v claude &> /dev/null; then
+        echo "  ✓ claude"
+    else
+        echo "  ⚠ claude CLI not found (optional)"
+    fi
+
+    if command -v gemini &> /dev/null; then
+        echo "  ✓ gemini"
+    else
+        echo "  ⚠ gemini CLI not found (optional)"
+    fi
+
+    echo ""
+
+    # Initialize pueue
+    echo "Initializing pueue..."
+    if ! pueue status &> /dev/null; then
+        pueued -d
+        sleep 1
+        echo "  Started pueue daemon"
+    else
+        echo "  pueue daemon already running"
+    fi
+
+    if ! pueue group 2>/dev/null | grep -q "plao"; then
+        pueue group add plao
+        echo "  Created 'plao' group"
+    else
+        echo "  'plao' group exists"
+    fi
+
+    pueue parallel 2 --group plao
+    echo "  Set parallelism to 2"
+
+    echo ""
+    echo "=== Setup Complete ==="
+    echo ""
+    echo "Next steps:"
+    echo "  1. plao add /path/to/your/project"
+    echo "  2. Edit .plao.config.json with your Linear API key"
+    echo "  3. plao start"
+}
+
+# ============================================================================
+# Main dispatch
+# ============================================================================
+
+case "${1:-help}" in
+    help|--help|-h)
+        cmd_help
+        ;;
+    add)
+        cmd_add "$2"
+        ;;
+    list|ls)
+        cmd_list
+        ;;
+    remove|rm)
+        cmd_remove "$2"
+        ;;
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs|log)
+        cmd_logs
+        ;;
+    setup)
+        cmd_setup
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run 'plao help' for usage"
+        exit 1
+        ;;
+esac
