@@ -120,8 +120,9 @@ echo "$ISSUES" | while read -r issue; do
         continue
     fi
 
-    # Enqueue the task
-    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$TITLE" "$LABEL"
+    # Enqueue the task (escape arguments for shell safety)
+    ESCAPED_TITLE=$(printf '%q' "$TITLE")
+    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$ESCAPED_TITLE" "$LABEL"
 
     # Mark as seen
     echo "$TASK_KEY" >> "$SEEN_FILE"
