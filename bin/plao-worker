@@ -104,6 +104,21 @@ echo ""
 # Convert steps from hyphen-separated to comma-separated for display
 STEPS_DISPLAY=$(echo "$STEPS" | tr '-' ', ')
 
+# Build step definitions dynamically - only include requested steps
+STEP_DEFS=""
+if [[ "$STEPS" == *"research"* ]]; then
+    STEP_DEFS+="- **research**: Investigate the codebase and gather relevant context. Search for related code, understand the architecture, and summarize your findings.
+"
+fi
+if [[ "$STEPS" == *"plan"* ]]; then
+    STEP_DEFS+="- **plan**: Based on research (yours or in comments), create a detailed implementation plan with specific files to modify and changes to make.
+"
+fi
+if [[ "$STEPS" == *"review"* ]]; then
+    STEP_DEFS+="- **review**: Review the existing work, code, or plan. Provide constructive feedback and suggestions for improvement.
+"
+fi
+
 # Build the done label
 DONE_LABEL="${MODEL}-${STEPS}-done"
 
@@ -115,14 +130,11 @@ You are an autonomous agent working on Linear ticket ${CODE}.
 
 1. First, use the Linear MCP tool to fetch the full details of issue ID: ${ID}
 2. Read the ticket title, description, comments, and any linked documents
-3. Execute the following steps in order: ${STEPS_DISPLAY}
+3. Execute ONLY the following step(s): ${STEPS_DISPLAY}
 
 ## Step Definitions
 
-- **research**: Investigate the codebase and gather relevant context. Search for related code, understand the architecture, and summarize your findings.
-- **plan**: Based on research (yours or in comments), create a detailed implementation plan with specific files to modify and changes to make.
-- **review**: Review the existing work, code, or plan. Provide constructive feedback and suggestions for improvement.
-
+${STEP_DEFS}
 ## Output Requirements
 
 After completing ALL steps:
@@ -141,12 +153,18 @@ Use the Linear MCP tool to perform these label updates.
 ## Notes
 
 - If you encounter any blockers or need clarification, note it clearly in your comment
-- Do not implement code changes - only research, plan, and review
+- Do not implement code changes - only perform the steps listed above
 - Be specific when referencing code files and line numbers
 PROMPT_END
 
-# Substitute variables into the prompt
-PROMPT=$(echo "$PROMPT" | sed "s/\${CODE}/$CODE/g" | sed "s/\${ID}/$ID/g" | sed "s/\${STEPS_DISPLAY}/$STEPS_DISPLAY/g" | sed "s/\${DONE_LABEL}/$DONE_LABEL/g" | sed "s/\${LABEL}/$LABEL/g")
+# Substitute variables into the prompt using bash parameter expansion
+# (handles multi-line STEP_DEFS better than sed)
+PROMPT="${PROMPT//\$\{CODE\}/$CODE}"
+PROMPT="${PROMPT//\$\{ID\}/$ID}"
+PROMPT="${PROMPT//\$\{STEPS_DISPLAY\}/$STEPS_DISPLAY}"
+PROMPT="${PROMPT//\$\{STEP_DEFS\}/$STEP_DEFS}"
+PROMPT="${PROMPT//\$\{DONE_LABEL\}/$DONE_LABEL}"
+PROMPT="${PROMPT//\$\{LABEL\}/$LABEL}"
 
 echo "=== Executing Agent ==="
 echo ""
