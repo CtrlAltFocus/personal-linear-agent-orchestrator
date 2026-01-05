@@ -111,16 +111,25 @@ Labels act as commands. The system parses them to determine which model to use, 
 
    ```json
    {
-     "linear_api_key": "lin_api_xxxxx",
-     "projects": {
-       "PROD": "/Users/you/Projects/my-product",
-       "API": "/Users/you/Projects/api-server"
-     }
+     "projects": [
+       {
+         "linear_prefix": "PROD",
+         "linear_api_key": "lin_api_xxxxx",
+         "path": "/Users/you/Projects/my-product"
+       },
+       {
+         "linear_prefix": "API",
+         "linear_api_key": "lin_api_yyyyy",
+         "path": "/Users/you/Projects/api-server"
+       }
+     ]
    }
    ```
 
-   - Get your Linear API key from: Linear → Settings → API → Personal API keys
-   - Map each Linear project prefix (e.g., "PROD" from "PROD-123") to its local directory
+   For each project:
+   - `linear_prefix`: The ticket prefix (e.g., "PROD" from "PROD-123")
+   - `linear_api_key`: Your Linear API key (Settings → API → Personal API keys)
+   - `path`: Local directory for the project
 
 4. **Add to cron (or run as loop):**
 
@@ -217,8 +226,8 @@ pueue start --group plao
 
 ### Tasks not being picked up
 
-1. Check if `linear_api_key` is set in `~/.plao/config.json`
-2. Check if the project prefix is mapped in `config.json` (e.g., "PROD" for "PROD-123")
+1. Check if the project exists in `~/.plao/config.json` with valid `linear_prefix`, `linear_api_key`, and `path`
+2. Verify the `linear_prefix` matches your ticket prefix (e.g., "PROD" for "PROD-123")
 3. Check if the poller is running: `tail -f ~/.plao/poller.log`
 4. Verify the label matches the pattern `*-todo`
 5. Ensure the ticket is in the Product team

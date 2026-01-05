@@ -22,11 +22,13 @@ echo "  Created: $PLAO_DIR/seen_tasks.txt"
 if [ ! -f "$PLAO_DIR/config.json" ]; then
     cat > "$PLAO_DIR/config.json" << 'EOF'
 {
-  "linear_api_key": "lin_api_xxxxx",
-  "projects": {
-    "PROD": "/Users/andy/Documents/Projects/my-product",
-    "API": "/Users/andy/Documents/Projects/api-server"
-  }
+  "projects": [
+    {
+      "linear_prefix": "PROD",
+      "linear_api_key": "lin_api_xxxxx",
+      "path": "/path/to/your/project"
+    }
+  ]
 }
 EOF
     echo "  Created: $PLAO_DIR/config.json (sample - please edit!)"

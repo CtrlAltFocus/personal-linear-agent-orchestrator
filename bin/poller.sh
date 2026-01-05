@@ -18,139 +18,120 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Read API key from config
-LINEAR_API_KEY=$(jq -r '.linear_api_key // empty' "$CONFIG_FILE")
-if [ -z "$LINEAR_API_KEY" ] || [ "$LINEAR_API_KEY" = "lin_api_xxxxx" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Please set linear_api_key in $CONFIG_FILE"
+# Validate config has projects
+PROJECT_COUNT=$(jq '.projects | length' "$CONFIG_FILE")
+if [ "$PROJECT_COUNT" -eq 0 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: No projects configured in $CONFIG_FILE"
     exit 1
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling for *-todo labels..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling for *-todo labels across $PROJECT_COUNT project(s)..."
 
-# GraphQL query to find issues with labels ending in "-todo" in the Product team
-# We fetch issues that have any label, then filter client-side for *-todo pattern
+# GraphQL query template for fetching issues with *-todo labels
+# We query all issues with -todo labels, then filter by prefix
 QUERY='query {
-  team(id: "Product") {
-    issues(
-      filter: {
-        labels: { some: { name: { endsWith: "-todo" } } }
-      }
-      first: 50
-    ) {
-      nodes {
-        id
-        identifier
-        title
-        labels {
-          nodes {
-            name
-          }
+  issues(
+    filter: {
+      labels: { some: { name: { endsWith: "-todo" } } }
+    }
+    first: 50
+  ) {
+    nodes {
+      id
+      identifier
+      title
+      labels {
+        nodes {
+          name
         }
       }
     }
   }
 }'
 
-# Make the API request
-RESPONSE=$(curl -s -X POST \
-    -H "Content-Type: application/json" \
-    -H "Authorization: $LINEAR_API_KEY" \
-    -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
-    https://api.linear.app/graphql)
+# Iterate through each configured project
+jq -c '.projects[]' "$CONFIG_FILE" | while read -r project; do
+    LINEAR_PREFIX=$(echo "$project" | jq -r '.linear_prefix')
+    LINEAR_API_KEY=$(echo "$project" | jq -r '.linear_api_key')
+    PROJECT_PATH=$(echo "$project" | jq -r '.path')
 
-# Check for errors
-if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
-    # Try by team name instead of ID
-    QUERY='query {
-      teams(filter: { name: { eq: "Product" } }) {
-        nodes {
-          issues(
-            filter: {
-              labels: { some: { name: { endsWith: "-todo" } } }
-            }
-            first: 50
-          ) {
-            nodes {
-              id
-              identifier
-              title
-              labels {
-                nodes {
-                  name
-                }
-              }
-            }
-          }
-        }
-      }
-    }'
+    # Validate project config
+    if [ -z "$LINEAR_PREFIX" ] || [ "$LINEAR_PREFIX" = "null" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project missing linear_prefix, skipping"
+        continue
+    fi
 
+    if [ -z "$LINEAR_API_KEY" ] || [ "$LINEAR_API_KEY" = "null" ] || [ "$LINEAR_API_KEY" = "lin_api_xxxxx" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project $LINEAR_PREFIX missing valid linear_api_key, skipping"
+        continue
+    fi
+
+    if [ -z "$PROJECT_PATH" ] || [ "$PROJECT_PATH" = "null" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project $LINEAR_PREFIX missing path, skipping"
+        continue
+    fi
+
+    if [ ! -d "$PROJECT_PATH" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project path does not exist: $PROJECT_PATH, skipping"
+        continue
+    fi
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking project: $LINEAR_PREFIX -> $PROJECT_PATH"
+
+    # Make the API request
     RESPONSE=$(curl -s -X POST \
         -H "Content-Type: application/json" \
         -H "Authorization: $LINEAR_API_KEY" \
         -d "$(jq -n --arg q "$QUERY" '{query: $q}')" \
         https://api.linear.app/graphql)
-fi
 
-# Check for errors again
-if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] API Error: $(echo "$RESPONSE" | jq -r '.errors[0].message')"
-    exit 1
-fi
-
-# Extract issues - handle both query formats
-ISSUES=$(echo "$RESPONSE" | jq -c '
-    (.data.team.issues.nodes // .data.teams.nodes[0].issues.nodes // [])[]
-' 2>/dev/null)
-
-if [ -z "$ISSUES" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No issues with *-todo labels found"
-    exit 0
-fi
-
-# Process each issue
-echo "$ISSUES" | while read -r issue; do
-    ID=$(echo "$issue" | jq -r '.id')
-    CODE=$(echo "$issue" | jq -r '.identifier')
-
-    # Find the *-todo label
-    LABEL=$(echo "$issue" | jq -r '.labels.nodes[].name' 2>/dev/null | grep -E '.*-todo$' | head -1)
-
-    if [ -z "$LABEL" ]; then
+    # Check for errors
+    if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] API Error for $LINEAR_PREFIX: $(echo "$RESPONSE" | jq -r '.errors[0].message')"
         continue
     fi
 
-    # Extract project prefix from CODE (e.g., "PROD" from "PROD-143")
-    PROJECT_PREFIX=$(echo "$CODE" | cut -d'-' -f1)
+    # Extract issues
+    ISSUES=$(echo "$RESPONSE" | jq -c '.data.issues.nodes[]' 2>/dev/null)
 
-    # Look up project path from config
-    PROJECT_PATH=$(jq -r --arg prefix "$PROJECT_PREFIX" '.projects[$prefix] // empty' "$CONFIG_FILE")
-
-    if [ -z "$PROJECT_PATH" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: No project path configured for $PROJECT_PREFIX (skipping $CODE)"
+    if [ -z "$ISSUES" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] No issues with *-todo labels found for $LINEAR_PREFIX"
         continue
     fi
 
-    if [ ! -d "$PROJECT_PATH" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Project path does not exist: $PROJECT_PATH (skipping $CODE)"
-        continue
-    fi
+    # Process each issue
+    echo "$ISSUES" | while read -r issue; do
+        ID=$(echo "$issue" | jq -r '.id')
+        CODE=$(echo "$issue" | jq -r '.identifier')
 
-    # Skip if already seen (dedup by ID + label combination)
-    TASK_KEY="${ID}:${LABEL}"
-    if grep -qF "$TASK_KEY" "$SEEN_FILE"; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipping (already seen): $CODE - $LABEL"
-        continue
-    fi
+        # Check if this issue belongs to this project (matches prefix)
+        ISSUE_PREFIX=$(echo "$CODE" | cut -d'-' -f1)
+        if [ "$ISSUE_PREFIX" != "$LINEAR_PREFIX" ]; then
+            continue
+        fi
 
-    # Enqueue the task (only pass safe values - ID, CODE, LABEL, PROJECT_PATH)
-    # The worker/agent will fetch full details from Linear
-    pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$LABEL" "$PROJECT_PATH"
+        # Find the *-todo label
+        LABEL=$(echo "$issue" | jq -r '.labels.nodes[].name' 2>/dev/null | grep -E '.*-todo$' | head -1)
 
-    # Mark as seen
-    echo "$TASK_KEY" >> "$SEEN_FILE"
+        if [ -z "$LABEL" ]; then
+            continue
+        fi
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Enqueued: $CODE - $LABEL -> $PROJECT_PATH"
+        # Skip if already seen (dedup by ID + label combination)
+        TASK_KEY="${ID}:${LABEL}"
+        if grep -qF "$TASK_KEY" "$SEEN_FILE"; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Skipping (already seen): $CODE - $LABEL"
+            continue
+        fi
+
+        # Enqueue the task
+        pueue add --group plao -- "$SCRIPT_DIR/worker.sh" "$ID" "$CODE" "$LABEL" "$PROJECT_PATH"
+
+        # Mark as seen
+        echo "$TASK_KEY" >> "$SEEN_FILE"
+
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Enqueued: $CODE - $LABEL -> $PROJECT_PATH"
+    done
 done
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling complete"
