@@ -74,6 +74,7 @@ COMMANDS:
     status              Show daemon and queue status
     logs                Tail the poller logs
     follow <id>         Follow a task's output (shortcut for: pueue follow <id>)
+    watch               Watch running and recent tasks (live update)
 
 EXAMPLES:
     plao add                    # Register current directory
@@ -218,11 +219,15 @@ cmd_start() {
         sleep 1
     fi
 
-    # Ensure plao group exists
-    if ! pueue group 2>/dev/null | grep -q "plao"; then
-        pueue group add plao
-        pueue parallel 2 --group plao
-    fi
+    # Ensure plao groups exist
+    pueue group add plao >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao >/dev/null 2>&1 || true
+
+    pueue group add plao-gemini >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao-gemini >/dev/null 2>&1 || true
+
+    pueue group add plao-claude >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao-claude >/dev/null 2>&1 || true
 
     # Get poll interval from config
     local poll_interval=$(get_poll_interval)
@@ -262,7 +267,20 @@ cmd_stop() {
     echo "PLAO daemon stopped"
 
     # Stop pueue if no tasks are running
-    if pueue status --group plao --json 2>/dev/null | jq -e '.tasks | to_entries | map(select(.value.status == "Running")) | length == 0' >/dev/null 2>&1; then
+    # Check all plao groups
+    local running_tasks=0
+    
+    if pueue status --group plao --json 2>/dev/null | jq -e '.tasks | to_entries | map(select(.value.status == "Running")) | length > 0' >/dev/null 2>&1; then
+        running_tasks=1
+    fi
+    if pueue status --group plao-gemini --json 2>/dev/null | jq -e '.tasks | to_entries | map(select(.value.status == "Running")) | length > 0' >/dev/null 2>&1; then
+        running_tasks=1
+    fi
+    if pueue status --group plao-claude --json 2>/dev/null | jq -e '.tasks | to_entries | map(select(.value.status == "Running")) | length > 0' >/dev/null 2>&1; then
+        running_tasks=1
+    fi
+
+    if [ "$running_tasks" -eq 0 ]; then
         echo "No running tasks, shutting down pueue..."
         pueue shutdown 2>/dev/null || true
     else
@@ -289,9 +307,19 @@ cmd_status() {
     echo ""
 
     # Queue status (pueue)
+    # Query to hide command and sort by recent
+    local PUEUE_QUERY="columns=id,status,path,start,end order_by id desc"
+
     echo "=== Task Queue (pueue) ==="
     if pueue status > /dev/null 2>&1; then
-        pueue status --group plao 2>/dev/null || echo "No 'plao' group yet. Run 'plao start' first."
+        echo "--- Group: plao (Default) ---"
+        pueue status --group plao "$PUEUE_QUERY" 2>/dev/null || echo "Not initialized"
+        echo ""
+        echo "--- Group: plao-gemini ---"
+        pueue status --group plao-gemini "$PUEUE_QUERY" 2>/dev/null || echo "Not initialized"
+        echo ""
+        echo "--- Group: plao-claude ---"
+        pueue status --group plao-claude "$PUEUE_QUERY" 2>/dev/null || echo "Not initialized"
         echo ""
         echo "Tip: Use 'plao follow <id>' to watch a task's output"
     else
@@ -325,6 +353,38 @@ cmd_follow() {
     echo "Following task $task_id (Ctrl+C to stop)..."
     echo ""
     pueue follow "$task_id"
+}
+
+cmd_watch() {
+    if ! pueue status > /dev/null 2>&1; then
+        echo "pueue daemon not running. Run 'plao start' first."
+        exit 1
+    fi
+
+    # Calculate time 10 minutes ago
+    # MacOS (BSD) date
+    if date -v-10M >/dev/null 2>&1; then
+        cutoff=$(date -v-10M '+%Y-%m-%d%H:%M:%S')
+    else
+        # GNU date (Linux)
+        cutoff=$(date -d '10 minutes ago' '+%Y-%m-%d%H:%M:%S')
+    fi
+
+    # Define query parts
+    local COL_DEFS="columns=id,status,path,start,end"
+    local ORDER_DEFS="order_by id desc"
+
+    echo "=== PLAO Active Tasks (Last 10m) ==="
+    echo "Time: $(date '+%H:%M:%S')"
+    echo ""
+
+    echo "--- RUNNING ---"
+    pueue status "$COL_DEFS status=running $ORDER_DEFS" 2>/dev/null || echo "None"
+    echo ""
+
+    echo "--- COMPLETED ---"
+    # Filter by end time > cutoff
+    pueue status "$COL_DEFS status!=running end > $cutoff $ORDER_DEFS" 2>/dev/null || echo "None"
 }
 
 cmd_setup() {
@@ -370,15 +430,20 @@ cmd_setup() {
         echo "  pueue daemon already running"
     fi
 
-    if ! pueue group 2>/dev/null | grep -q "plao"; then
-        pueue group add plao
-        echo "  Created 'plao' group"
-    else
-        echo "  'plao' group exists"
-    fi
+    # Create groups (ignoring errors if they exist)
+    pueue group add plao >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao
+    echo "  Configured 'plao' group"
 
-    pueue parallel 2 --group plao
-    echo "  Set parallelism to 2"
+    pueue group add plao-gemini >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao-gemini
+    echo "  Configured 'plao-gemini' group"
+
+    pueue group add plao-claude >/dev/null 2>&1 || true
+    pueue parallel 1 --group plao-claude
+    echo "  Configured 'plao-claude' group"
+
+    echo "  Set parallelism to 1 for all groups"
 
     echo ""
     echo "=== Setup Complete ==="
@@ -420,6 +485,9 @@ case "${1:-help}" in
         ;;
     follow)
         cmd_follow "$2"
+        ;;
+    watch)
+        cmd_watch
         ;;
     setup)
         cmd_setup
