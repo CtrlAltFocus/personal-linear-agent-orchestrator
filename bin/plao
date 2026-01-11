@@ -379,12 +379,19 @@ cmd_watch() {
     echo ""
 
     echo "--- RUNNING ---"
-    pueue status "$COL_DEFS status=running $ORDER_DEFS" 2>/dev/null || echo "None"
+    OUT=$(pueue status "$COL_DEFS status=running $ORDER_DEFS" 2>&1)
+    if [ -z "$OUT" ]; then echo "None"; else echo "$OUT"; fi
+    echo ""
+
+    echo "--- QUEUED ---"
+    OUT=$(pueue status "$COL_DEFS status=queued $ORDER_DEFS" 2>&1)
+    if [ -z "$OUT" ]; then echo "None"; else echo "$OUT"; fi
     echo ""
 
     echo "--- COMPLETED ---"
     # Filter by end time > cutoff
-    pueue status "$COL_DEFS status!=running end > $cutoff $ORDER_DEFS" 2>/dev/null || echo "None"
+    OUT=$(pueue status "$COL_DEFS status!=running status!=queued end > $cutoff $ORDER_DEFS" 2>&1)
+    if [ -z "$OUT" ]; then echo "None"; else echo "$OUT"; fi
 }
 
 cmd_setup() {
